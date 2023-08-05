@@ -71,3 +71,70 @@ class PositionOfBaseReceiver(Thread):
                 time.sleep(0.01)  
         if PositionOfBaseReceiver.serial_object.is_open:
             PositionOfBaseReceiver.serial_object.close()
+
+
+class CommandMessage(Thread):
+    start_char = '<'
+    end_char = '>'
+    separator = '|'
+    serial_object = None
+    message_lock = Lock()
+    COMMAND = None
+    VALUE = 0
+
+    def __init__(self):
+        Thread.__init__(self)
+        CommandMessage.message_lock.acquire()
+
+    @staticmethod
+    def set_serial_object(serial_object):
+        CommandMessage.serial_object = serial_object
+
+    def run(self):
+        while not CommandMessage.END:
+            CommandMessage.message_lock.acquire()
+            if not CommandMessage.END:
+                ack = CommandMessage.send()
+                CommandMessage.check_state(ack)
+
+    @staticmethod
+    def set_params(command,value=0):
+        CommandMessage.COMMAND = command
+        CommandMessage.VALUE = value
+        CommandMessage.message_lock.release()
+
+    @staticmethod
+    def close_communication():
+        CommandMessage.END = True
+        CommandMessage.message_lock.release()
+        if CommandMessage.serial_object.is_open:
+            CommandMessage.serial_object.close()
+
+
+    @staticmethod
+    def send():
+        message = (CommandMessage.start_char +
+                   CommandMessage.separator +
+                   CommandMessage.COMMAND +
+                   CommandMessage.separator +
+                   str(CommandMessage.VALUE) +
+                   CommandMessage.separator +
+                   CommandMessage.end_char)
+        message_in_bytes = message.encode('utf-8')
+        UART.write_message(CommandMessage.serial_object, message_in_bytes)
+        return CommandMessage.receive_ack()
+    
+    @staticmethod
+    def receive_ack():
+        received_message = UART.read_until_end_char(CommandMessage.serial_object,
+                                                CommandMessage.start_char,
+                                                CommandMessage.end_char)
+        return CommandMessage.parse_ack(received_message)
+
+    @staticmethod  # message type <|1|> or <|0|>
+    def parse_ack(message):
+        parameters = message.split('|')
+        ack = 0
+        if len(parameters) == 3:
+            ack = int(parameters[1])
+        return ack
